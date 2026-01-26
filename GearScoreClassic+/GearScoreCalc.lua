@@ -1,7 +1,3 @@
-if not IsAddOnLoaded("Blizzard_InspectUI") then
-    LoadAddOn("Blizzard_InspectUI")
-end
-
 GearScoreCalc = {}
 
 
@@ -16,7 +12,7 @@ IS_MANUAL_INSPECT_ACTIVE = false
 local fontPath = "Fonts\\FRIZQT__.TTF"  -- Standard WoW font
 local FONT_SIZE = 11
 local GLOBAL_SCALE = 1.7
-local MAX_GEAR_SCORE = 1000  -- Phase2: 530 -- Phase1: 350  -- Maximum reachable gearscore
+local MAX_GEAR_SCORE = 3000  
 local GS_ENCHANT_MODIFIER = 1.05  -- 5% increase for enchanted items
 local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
@@ -24,7 +20,7 @@ local INSPECT_RETRIES = {}
 local TOTAL_EQUIPPABLE_SLOTS = 17
 local ADDON_VERSION = 1.5
 
-print("|cFFFFFF00" .. "GearScoreClassic+ " .. "|r" .. "|cFF00FF00" .. ADDON_VERSION .. "|r" .. "|cFFFFFF00" .. " by " .. "|r" .. "|cFFFFA500" .. "gk646" .. "|r")
+print("|cFFFFFF00" .. "GearScoreTBCClassic+ " .. "|r" .. "|cFF00FF00" .. ADDON_VERSION .. "|r" .. "|cFFFFFF00" .. " by " .. "|r" .. "|cFFFFA500" .. "gk646" .. "|r")
 
 local itemTypeInfo = {
     ["INVTYPE_RELIC"] = { 0.3164, false },
@@ -90,8 +86,8 @@ local function CreateGearScoreFrame(name, parentFrame, point, relativePoint, xOf
     return frame
 end
 
-scoreFrame = CreateGearScoreFrame("GearScoreDisplay", PaperDollFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 225)
-inspectScoreFrame = CreateGearScoreFrame("InspectGearScoreDisplay", InspectFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 130)
+scoreFrame = CreateGearScoreFrame("GearScoreDisplay", PaperDollFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 235)
+inspectScoreFrame = CreateGearScoreFrame("InspectGearScoreDisplay", InspectFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 140)
 
 
 -- Returns in r g b values from 0.0 - 1.0

@@ -1,27 +1,49 @@
 -- Event handling
-gearScoreFrame = CreateFrame("Frame")
+local gearScoreFrame = CreateFrame("Frame")
 gearScoreFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 gearScoreFrame:RegisterEvent("INSPECT_READY")
-gearScoreFrame:HookScript("OnEvent", function(self, event, inspectGUID)
-    if event == "PLAYER_EQUIPMENT_CHANGED" then
-        GearScoreCalc.OnPlayerEquipmentChanged()
-    elseif event == "INSPECT_READY" then
-        C_Timer.After(0.2, function()
-            GearScoreCalc.OnInspectReady(inspectGUID)
+gearScoreFrame:RegisterEvent("PLAYER_LOGIN")
+
+local inspectUILoaded = false
+
+local function SetupInspectHooks()
+    if InspectFrame and not inspectUILoaded then
+        inspectUILoaded = true
+        
+        InspectFrame:HookScript("OnHide", GearScoreCalc.OnInspectFrameHide)
+        
+        InspectFrame:HookScript("OnShow", function()
+            GearScoreCalc.OnInspectFrameShow()
+            if InspectFrame.unit then
+                GearScoreCalc.UpdateFrame(inspectScoreFrame, InspectFrame.unit)
+            end
         end)
     end
-end)
+end
 
-InspectFrame:HookScript("OnHide", GearScoreCalc.OnInspectFrameHide)
-
-InspectFrame:HookScript("OnShow", function()
-    GearScoreCalc.OnInspectFrameShow()
-    if InspectFrame.unit then
-        GearScoreCalc.UpdateFrame(inspectScoreFrame, InspectFrame.unit)
+gearScoreFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "PLAYER_LOGIN" then
+        -- Character frame hook
+        CharacterFrame:HookScript("OnShow", function()
+            GearScoreCalc.UpdateFrame(scoreFrame, "player")
+        end)
+        
+        -- Try to setup inspect hooks
+        SetupInspectHooks()
+        
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        GearScoreCalc.OnPlayerEquipmentChanged()
+        
+    elseif event == "INSPECT_READY" then
+        -- Setup inspect hooks if not done yet (InspectFrame loads on first inspect)
+        if not inspectUILoaded then
+            SetupInspectHooks()
+        end
+        
+        C_Timer.After(0.2, function()
+            GearScoreCalc.OnInspectReady(arg1)
+        end)
     end
-end)
-CharacterFrame:HookScript("OnShow", function()
-    GearScoreCalc.UpdateFrame(scoreFrame, "player")
 end)
 
 GameTooltip:HookScript("OnTooltipSetUnit", function(self)

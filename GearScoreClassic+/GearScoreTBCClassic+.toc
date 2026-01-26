@@ -1,8 +1,10 @@
-## Interface: 11502
-## Title: GearScoreClassic+
+## Interface: 20504
+## Title: GearScoreTBCClassic+
 ## Notes: Calculates gearscore, a general metric for itemization strength
-## Version: 1.8
+## Version: 2.0
 ## Author: gk646 and contributors
+## OptionalDeps: Blizzard_InspectUI
+## LoadOnDemand: 0
 ## SavedVariables:
 
 GearScoreCalc.lua
