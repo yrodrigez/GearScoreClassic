@@ -18,7 +18,7 @@ local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
 local TOTAL_EQUIPPABLE_SLOTS = 17
-local ADDON_VERSION = 1.5
+local ADDON_VERSION = 1.0
 
 print("|cFFFFFF00" .. "GearScoreTBCClassic+ " .. "|r" .. "|cFF00FF00" .. ADDON_VERSION .. "|r" .. "|cFFFFFF00" .. " by " .. "|r" .. "|cFFFFA500" .. "gk646" .. "|r")
 
