@@ -12,8 +12,9 @@ IS_MANUAL_INSPECT_ACTIVE = false
 local fontPath = "Fonts\\FRIZQT__.TTF"  -- Standard WoW font
 local FONT_SIZE = 11
 local GLOBAL_SCALE = 1.7
-local MAX_GEAR_SCORE = 2100  
+local MAX_GEAR_SCORE = 2800  -- Tuned for TBC (Sunwell BiS ceiling)
 local GS_ENCHANT_MODIFIER = 1.05  -- 5% increase for enchanted items
+local GS_GEM_SCORE_PER_GEM = 8     -- Flat score bonus per socketed gem
 local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
@@ -138,6 +139,17 @@ local function GetEnchantIDFromItemLink(itemLink)
     return tonumber(enchantID)  -- Convert to number, will be nil if no enchantment
 end
 
+-- Counts the number of gems socketed in an item from its itemLink
+-- Item link format: item:itemID:enchantID:gemID1:gemID2:gemID3:gemID4:...
+local function GetGemCountFromItemLink(itemLink)
+    local gemCount = 0
+    local _, _, gem1, gem2, gem3 = itemLink:match("item:%d+:%d*:(%d*):(%d*):(%d*)")
+    if gem1 and gem1 ~= "" and tonumber(gem1) > 0 then gemCount = gemCount + 1 end
+    if gem2 and gem2 ~= "" and tonumber(gem2) > 0 then gemCount = gemCount + 1 end
+    if gem3 and gem3 ~= "" and tonumber(gem3) > 0 then gemCount = gemCount + 1 end
+    return gemCount
+end
+
 -- Custom rules for specific classes
 local function CustomRulesSlotModifier(slotModifier, itemEquipLoc, classToken)
     if classToken == "HUNTER" then
@@ -191,12 +203,16 @@ local function CalculateItemScore(itemLink, classToken)
 
     local enchantModifier = enchantID and enchantID > 0 and GS_ENCHANT_MODIFIER or 1
 
+    -- Count socketed gems and calculate gem bonus
+    local gemCount = GetGemCountFromItemLink(itemLink)
+    local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
+
     local adjustedItemLevel = itemLevel
     if itemEquipLoc == "INVTYPE_2HWEAPON" then
         adjustedItemLevel = (itemLevel * 1.0625) * 2
     end
 
-    return (itemLevel / rarityModifier) * slotModifier * enchantModifier * GLOBAL_SCALE, adjustedItemLevel
+    return (itemLevel / rarityModifier) * slotModifier * enchantModifier * GLOBAL_SCALE + gemBonus, adjustedItemLevel
 end
 
 local function CalculateGearScoreAndAverageItemLevel(unit)
