@@ -11,10 +11,11 @@ local _, PLAYER_CLASS = UnitClass("player")
 IS_MANUAL_INSPECT_ACTIVE = false
 local fontPath = "Fonts\\FRIZQT__.TTF"  -- Standard WoW font
 local FONT_SIZE = 11
-local GLOBAL_SCALE = 1.7
-local MAX_GEAR_SCORE = 2800  -- Tuned for TBC (Sunwell BiS ceiling)
+local BRACKET_SIZE = 400  -- TBC bracket size (Classic=200, TBC=400, WotLK=1000)
+local MAX_GEAR_SCORE = BRACKET_SIZE * 6 - 1  -- 2399 for TBC
+local GS_SCALE = 1.8618  -- GearScoreLite base scale factor
 local GS_ENCHANT_MODIFIER = 1.05  -- 5% increase for enchanted items
-local GS_GEM_SCORE_PER_GEM = 8     -- Flat score bonus per socketed gem
+local GS_GEM_SCORE_PER_GEM = 5    -- Flat score bonus per socketed gem
 local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
@@ -53,14 +54,60 @@ local itemTypeInfo = {
     ["INVTYPE_BAG"] = { 0, false },
 }
 
-local rarityModifiers = {
-    -- Assuming rarity is a number from 1 (common) to 5 (legendary)
-    [0] = 3.5, -- Poor
-    [1] = 3, -- Common
-    [2] = 2.5, -- Uncommon
-    [3] = 1.76, -- Rare
-    [4] = 1.6, -- Epic
-    [5] = 1.4, -- Legendary
+-- GearScoreLite formula tables
+-- Table A: items with ilvl > 120, Table B: items with ilvl <= 120
+local GS_Formula = {
+    ["A"] = {
+        [4] = { A = 91.4500, B = 0.6500 },
+        [3] = { A = 81.3750, B = 0.8125 },
+        [2] = { A = 73.0000, B = 1.0000 },
+    },
+    ["B"] = {
+        [4] = { A = 26.0000, B = 1.2000 },
+        [3] = { A = 0.7500, B = 1.8000 },
+        [2] = { A = 8.0000, B = 2.0000 },
+        [1] = { A = 0.0000, B = 2.2500 },
+    },
+}
+
+-- GearScoreLite bracket-based color quality table
+local GS_Quality = {
+    [BRACKET_SIZE * 6] = {
+        Red = { A = 0.94, B = BRACKET_SIZE * 5, C = 0.00006, D = 1 },
+        Green = { A = 0, B = 0, C = 0, D = 0 },
+        Blue = { A = 0.47, B = BRACKET_SIZE * 5, C = 0.00047, D = -1 },
+        Description = "Legendary"
+    },
+    [BRACKET_SIZE * 5] = {
+        Red = { A = 0.69, B = BRACKET_SIZE * 4, C = 0.00025, D = 1 },
+        Green = { A = 0.97, B = BRACKET_SIZE * 4, C = 0.00096, D = -1 },
+        Blue = { A = 0.28, B = BRACKET_SIZE * 4, C = 0.00019, D = 1 },
+        Description = "Epic"
+    },
+    [BRACKET_SIZE * 4] = {
+        Red = { A = 0.0, B = BRACKET_SIZE * 3, C = 0.00069, D = 1 },
+        Green = { A = 1, B = BRACKET_SIZE * 3, C = 0.00003, D = -1 },
+        Blue = { A = 0.5, B = BRACKET_SIZE * 3, C = 0.00022, D = -1 },
+        Description = "Superior"
+    },
+    [BRACKET_SIZE * 3] = {
+        Red = { A = 0.12, B = BRACKET_SIZE * 2, C = 0.00012, D = -1 },
+        Green = { A = 0, B = BRACKET_SIZE * 2, C = 0.001, D = 1 },
+        Blue = { A = 1, B = BRACKET_SIZE * 2, C = 0.00050, D = -1 },
+        Description = "Uncommon"
+    },
+    [BRACKET_SIZE * 2] = {
+        Red = { A = 1, B = BRACKET_SIZE, C = 0.00088, D = -1 },
+        Green = { A = 1, B = BRACKET_SIZE, C = 0.001, D = -1 },
+        Blue = { A = 1, B = 0, C = 0.00000, D = 0 },
+        Description = "Common"
+    },
+    [BRACKET_SIZE] = {
+        Red = { A = 0.55, B = 0, C = 0.00045, D = 1 },
+        Green = { A = 0.55, B = 0, C = 0.00045, D = 1 },
+        Blue = { A = 0.55, B = 0, C = 0.00045, D = 1 },
+        Description = "Trash"
+    },
 }
 
 local function CreateGearScoreFrame(name, parentFrame, point, relativePoint, xOffset, yOffset, textXOffset, textYOffset)
@@ -91,46 +138,37 @@ scoreFrame = CreateGearScoreFrame("GearScoreDisplay", PaperDollFrame, "BOTTOMLEF
 inspectScoreFrame = CreateGearScoreFrame("InspectGearScoreDisplay", InspectFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 140)
 
 
+-- GearScoreLite bracket-based color interpolation
+local function GetGearScoreColor(gearScore)
+    if not gearScore or gearScore <= 0 then
+        return 0.55, 0.55, 0.55, "Trash"
+    end
+    if gearScore > MAX_GEAR_SCORE then
+        gearScore = MAX_GEAR_SCORE
+    end
+    for i = 0, 5 do
+        if gearScore > i * BRACKET_SIZE and gearScore <= (i + 1) * BRACKET_SIZE then
+            local bracket = GS_Quality[(i + 1) * BRACKET_SIZE]
+            local r = bracket.Red.A + ((gearScore - bracket.Red.B) * bracket.Red.C) * bracket.Red.D
+            -- Note: Green/Blue swap preserved from original GearScoreLite
+            local g = bracket.Blue.A + ((gearScore - bracket.Blue.B) * bracket.Blue.C) * bracket.Blue.D
+            local b = bracket.Green.A + ((gearScore - bracket.Green.B) * bracket.Green.C) * bracket.Green.D
+            return r, g, b, bracket.Description
+        end
+    end
+    return 0.55, 0.55, 0.55, "Trash"
+end
+
 -- Returns in r g b values from 0.0 - 1.0
 local function GetColorForGearScore(gearScore)
-    local percentile = gearScore / MAX_GEAR_SCORE * 100
-
-    if percentile >= 100 then
-        return 0.90, 0.80, 0.50  -- Gold
-    elseif percentile >= 99 then
-        return 0.89, 0.47, 0.65  -- Pink
-    elseif percentile >= 95 then
-        return 1.00, 0.50, 0.00  -- Orange
-    elseif percentile >= 75 then
-        return 0.63, 0.21, 0.93  -- Purple
-    elseif percentile >= 50 then
-        return 0.00, 0.44, 1.00  -- Blue
-    elseif percentile >= 25 then
-        return 0.12, 1.00, 0.00  -- Green
-    else
-        return 0.40, 0.40, 0.40  -- Grey
-    end
+    local r, g, b = GetGearScoreColor(gearScore)
+    return r, g, b
 end
 
 -- Returns the color string which can be used in text formatting
 local function GetColorForGearScoreText(gearScore)
-    local percentile = gearScore / MAX_GEAR_SCORE * 100
-
-    if percentile >= 100 then
-        return "|cffe5cc80"  -- Gold for 100 and above
-    elseif percentile >= 99 then
-        return "|cffe268a8"  -- Pink for 99
-    elseif percentile >= 95 then
-        return "|cffff8000"  -- Orange for 95-98
-    elseif percentile >= 75 then
-        return "|cffa335ee"  -- Purple for 75-94
-    elseif percentile >= 50 then
-        return "|cff0070ff"  -- Blue for 50-74
-    elseif percentile >= 25 then
-        return "|cff1eff00"  -- Green for 25-49
-    else
-        return "|cff666666"  -- Grey for 0-24
-    end
+    local r, g, b = GetGearScoreColor(gearScore)
+    return string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
 end
 
 -- Tries to find the enchant id from an itemLink
@@ -150,31 +188,12 @@ local function GetGemCountFromItemLink(itemLink)
     return gemCount
 end
 
--- Custom rules for specific classes
-local function CustomRulesSlotModifier(slotModifier, itemEquipLoc, classToken)
-    if classToken == "HUNTER" then
-        if itemEquipLoc == "INVTYPE_WEAPONMAINHAND" then
-            return slotModifier - 0.5
-        elseif itemEquipLoc == "INVTYPE_WEAPONOFFHAND" then
-            return slotModifier - 0.5
-        elseif itemEquipLoc == "INVTYPE_2HWEAPON" then
-            return slotModifier - 1
-        elseif itemEquipLoc == "INVTYPE_WEAPON" then
-            return slotModifier - 0.5
-        elseif itemEquipLoc == "INVTYPE_RANGED" or itemEquipLoc == "INVTYPE_RANGEDRIGHT" then
-            return slotModifier + 1
-        end
-    end
-    return slotModifier
-end
-
--- Calculates the score of a single individual item
+-- Calculates the score of a single individual item (based on GearScoreLite formula)
 local function CalculateItemScore(itemLink, classToken)
     if not itemLink then
         return 0, 0
     end
 
-    -- Call GetItemInfo only once and store all return values
     local itemName, _, itemRarity, itemLevel, _, _, _, _, itemEquipLoc = GetItemInfo(itemLink)
 
     -- If data is not ready, retry later
@@ -192,27 +211,76 @@ local function CalculateItemScore(itemLink, classToken)
 
     local slotModifier = slotData[1]
     local isEnchantable = slotData[2]
-    local rarityModifier = rarityModifiers[itemRarity] or 0
 
-    slotModifier = CustomRulesSlotModifier(slotModifier, itemEquipLoc, classToken)
+    -- Rarity adjustments (from GearScoreLite)
+    local qualityScale = 1
+    local isHeirloom = false
+    if itemRarity == 5 then        -- Legendary
+        qualityScale = 1.3
+        itemRarity = 4
+    elseif itemRarity == 1 then    -- Common
+        qualityScale = 0.005
+        itemRarity = 2
+    elseif itemRarity == 0 then    -- Poor
+        qualityScale = 0.005
+        itemRarity = 2
+    elseif itemRarity == 7 then    -- Heirloom
+        itemRarity = 3
+        itemLevel = 187.05
+        isHeirloom = true
+    end
 
+    -- Pick formula table based on item level threshold
+    local formulaTable
+    if itemLevel > 120 then
+        formulaTable = GS_Formula["A"]
+    else
+        formulaTable = GS_Formula["B"]
+    end
+
+    if itemRarity < 2 or itemRarity > 4 or not formulaTable[itemRarity] then
+        return 0, itemLevel
+    end
+
+    local gearScore = math.floor(
+        ((itemLevel - formulaTable[itemRarity].A) / formulaTable[itemRarity].B)
+        * slotModifier * GS_SCALE * qualityScale
+    )
+
+    -- Reset heirloom item level for avg calculation
+    if isHeirloom then
+        itemLevel = 0
+    end
+
+    if gearScore < 0 then
+        gearScore = 0
+    end
+
+    -- Hunter class adjustments (from GearScoreLite)
+    if classToken == "HUNTER" then
+        if itemEquipLoc == "INVTYPE_2HWEAPON" or itemEquipLoc == "INVTYPE_WEAPONMAINHAND"
+            or itemEquipLoc == "INVTYPE_WEAPONOFFHAND" or itemEquipLoc == "INVTYPE_WEAPON"
+            or itemEquipLoc == "INVTYPE_HOLDABLE" then
+            gearScore = math.floor(gearScore * 0.3164)
+        elseif itemEquipLoc == "INVTYPE_RANGED" or itemEquipLoc == "INVTYPE_RANGEDRIGHT" then
+            gearScore = math.floor(gearScore * 5.3224)
+        end
+    end
+
+    -- Enchant bonus (addon enhancement)
     local enchantID
     if isEnchantable then
         enchantID = GetEnchantIDFromItemLink(itemLink)
     end
-
-    local enchantModifier = enchantID and enchantID > 0 and GS_ENCHANT_MODIFIER or 1
-
-    -- Count socketed gems and calculate gem bonus
-    local gemCount = GetGemCountFromItemLink(itemLink)
-    local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
-
-    local adjustedItemLevel = itemLevel
-    if itemEquipLoc == "INVTYPE_2HWEAPON" then
-        adjustedItemLevel = (itemLevel * 1.0625) * 2
+    if enchantID and enchantID > 0 then
+        gearScore = math.floor(gearScore * GS_ENCHANT_MODIFIER)
     end
 
-    return (itemLevel / rarityModifier) * slotModifier * enchantModifier * GLOBAL_SCALE + gemBonus, adjustedItemLevel
+    -- Gem bonus (addon enhancement)
+    local gemCount = GetGemCountFromItemLink(itemLink)
+    gearScore = gearScore + (gemCount * GS_GEM_SCORE_PER_GEM)
+
+    return gearScore, itemLevel
 end
 
 local function CalculateGearScoreAndAverageItemLevel(unit)
