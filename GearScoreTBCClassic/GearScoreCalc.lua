@@ -20,7 +20,7 @@ local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
 local TOTAL_EQUIPPABLE_SLOTS = 17
-local ADDON_VERSION = 1.0
+local ADDON_VERSION = "1.1.0"
 
 print("|cFFFFFF00" .. "GearScoreTBCClassic+ " .. "|r" .. "|cFF00FF00" .. ADDON_VERSION .. "|r" .. "|cFFFFFF00" .. " by " .. "|r" .. "|cFFFFA500" .. "gk646" .. "|r")
 
@@ -54,20 +54,12 @@ local itemTypeInfo = {
     ["INVTYPE_BAG"] = { 0, false },
 }
 
--- GearScoreLite formula tables
--- Table A: items with ilvl > 120, Table B: items with ilvl <= 120
+-- Single linear formula table (no hard item level breakpoint).
 local GS_Formula = {
-    ["A"] = {
-        [4] = { A = 91.4500, B = 0.6500 },
-        [3] = { A = 81.3750, B = 0.8125 },
-        [2] = { A = 73.0000, B = 1.0000 },
-    },
-    ["B"] = {
-        [4] = { A = 26.0000, B = 1.2000 },
-        [3] = { A = 0.7500, B = 1.8000 },
-        [2] = { A = 8.0000, B = 2.0000 },
-        [1] = { A = 0.0000, B = 2.2500 },
-    },
+    [4] = { A = 26.0000, B = 1.2000 },
+    [3] = { A = 0.7500, B = 1.8000 },
+    [2] = { A = 8.0000, B = 2.0000 },
+    [1] = { A = 0.0000, B = 2.2500 },
 }
 
 -- GearScoreLite bracket-based color quality table
@@ -181,7 +173,7 @@ end
 -- Item link format: item:itemID:enchantID:gemID1:gemID2:gemID3:gemID4:...
 local function GetGemCountFromItemLink(itemLink)
     local gemCount = 0
-    local _, _, gem1, gem2, gem3 = itemLink:match("item:%d+:%d*:(%d*):(%d*):(%d*)")
+    local gem1, gem2, gem3 = itemLink:match("item:%d+:%d*:(%d*):(%d*):(%d*)")
     if gem1 and gem1 ~= "" and tonumber(gem1) > 0 then gemCount = gemCount + 1 end
     if gem2 and gem2 ~= "" and tonumber(gem2) > 0 then gemCount = gemCount + 1 end
     if gem3 and gem3 ~= "" and tonumber(gem3) > 0 then gemCount = gemCount + 1 end
@@ -230,21 +222,13 @@ local function CalculateItemScore(itemLink, classToken)
         isHeirloom = true
     end
 
-    -- Pick formula table based on item level threshold
-    local formulaTable
-    if itemLevel > 120 then
-        formulaTable = GS_Formula["A"]
-    else
-        formulaTable = GS_Formula["B"]
-    end
-
-    if itemRarity < 2 or itemRarity > 4 or not formulaTable[itemRarity] then
+    local formula = GS_Formula[itemRarity]
+    if itemRarity < 2 or itemRarity > 4 or not formula then
         return 0, itemLevel
     end
 
     local gearScore = math.floor(
-        ((itemLevel - formulaTable[itemRarity].A) / formulaTable[itemRarity].B)
-        * slotModifier * GS_SCALE * qualityScale
+        ((itemLevel - formula.A) / formula.B) * slotModifier * GS_SCALE * qualityScale
     )
 
     -- Reset heirloom item level for avg calculation
