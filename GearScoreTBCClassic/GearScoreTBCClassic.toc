@@ -7,7 +7,7 @@
 ## Author: Yago (original by gk646)
 ## OptionalDeps: Blizzard_InspectUI
 ## LoadOnDemand: 0
-## SavedVariables:
+## SavedVariables: GearScoreTBCClassicDB
 
 GearScoreCalc.lua
 Main.lua

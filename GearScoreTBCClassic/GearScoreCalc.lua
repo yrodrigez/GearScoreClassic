@@ -102,15 +102,25 @@ local GS_Quality = {
     },
 }
 
-local function CreateGearScoreFrame(name, parentFrame, point, relativePoint, xOffset, yOffset, textXOffset, textYOffset)
+local DEFAULT_CHAR_POS = { x = 73, y = 240 }
+local DEFAULT_INSPECT_POS = { x = 73, y = 145 }
+local isUnlocked = false
+
+local function CreateGearScoreFrame(name, parentFrame, defaultX, defaultY)
     local frame = CreateFrame("Frame", name, parentFrame)
-    frame:SetSize(100, 30)
-    frame:SetPoint(point, parentFrame, relativePoint, xOffset, yOffset)
+    frame:SetSize(220, 50)
+    frame:SetPoint("BOTTOMLEFT", parentFrame, "BOTTOMLEFT", defaultX, defaultY)
+
+    -- Background texture for unlock/move mode (hidden by default)
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+    frame.bg:SetColorTexture(0, 0, 0, 0.5)
+    frame.bg:Hide()
 
     frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.text:SetFont(fontPath, FONT_SIZE)
     frame.text:SetTextColor(1, 1, 1)
-    frame.text:SetPoint("BOTTOMLEFT", frame, "LEFT", textXOffset, textYOffset)
+    frame.text:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 10)
     frame.text:SetText("GearScore")
 
     frame.avgItemLevelText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -123,11 +133,126 @@ local function CreateGearScoreFrame(name, parentFrame, point, relativePoint, xOf
     frame.scoreValueText:SetTextColor(1, 1, 1)
     frame.scoreValueText:SetPoint("BOTTOMLEFT", frame.text, "BOTTOMLEFT", 0, 10)
 
+    -- Draggable setup (mouse disabled by default, enabled via /gs)
+    frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(false)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- Reanchor relative to parent
+        local parent = self:GetParent()
+        if parent and parent:GetLeft() and self:GetLeft() then
+            local x = self:GetLeft() - parent:GetLeft()
+            local y = self:GetBottom() - parent:GetBottom()
+            self:ClearAllPoints()
+            self:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x, y)
+        end
+    end)
+
     return frame
 end
 
-scoreFrame = CreateGearScoreFrame("GearScoreDisplay", PaperDollFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 235)
-inspectScoreFrame = CreateGearScoreFrame("InspectGearScoreDisplay", InspectFrame, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, 73, 140)
+scoreFrame = CreateGearScoreFrame("GearScoreDisplay", PaperDollFrame, DEFAULT_CHAR_POS.x, DEFAULT_CHAR_POS.y)
+inspectScoreFrame = CreateGearScoreFrame("InspectGearScoreDisplay", InspectFrame, DEFAULT_INSPECT_POS.x, DEFAULT_INSPECT_POS.y)
+
+-- Position management
+local function SaveFramePosition(frame, key)
+    if not GearScoreTBCClassicDB or not frame:GetLeft() then return end
+    local parent = frame:GetParent()
+    if not parent or not parent:GetLeft() then return end
+    local x = frame:GetLeft() - parent:GetLeft()
+    local y = frame:GetBottom() - parent:GetBottom()
+    GearScoreTBCClassicDB[key] = { x = x, y = y }
+end
+
+local function RestoreFramePosition(frame, key)
+    if not GearScoreTBCClassicDB then return end
+    local pos = GearScoreTBCClassicDB[key]
+    if pos and pos.x and pos.y then
+        frame:ClearAllPoints()
+        frame:SetPoint("BOTTOMLEFT", frame:GetParent(), "BOTTOMLEFT", pos.x, pos.y)
+    end
+end
+
+function GearScoreCalc.InitSavedVars()
+    if not GearScoreTBCClassicDB then
+        GearScoreTBCClassicDB = {}
+    end
+    RestoreFramePosition(scoreFrame, "characterPos")
+    if inspectScoreFrame and InspectFrame then
+        RestoreFramePosition(inspectScoreFrame, "inspectPos")
+    end
+end
+
+local function SetUnlocked(unlock)
+    isUnlocked = unlock
+    local frames = { scoreFrame }
+    if inspectScoreFrame then
+        table.insert(frames, inspectScoreFrame)
+    end
+    for _, frame in ipairs(frames) do
+        frame:EnableMouse(unlock)
+        if unlock then
+            frame.bg:Show()
+            frame:SetFrameStrata("DIALOG")
+        else
+            frame.bg:Hide()
+            frame:SetFrameStrata("MEDIUM")
+        end
+    end
+    if not unlock then
+        SaveFramePosition(scoreFrame, "characterPos")
+        if inspectScoreFrame and InspectFrame then
+            SaveFramePosition(inspectScoreFrame, "inspectPos")
+        end
+    end
+end
+
+local function ResetPositions()
+    scoreFrame:ClearAllPoints()
+    scoreFrame:SetPoint("BOTTOMLEFT", PaperDollFrame, "BOTTOMLEFT", DEFAULT_CHAR_POS.x, DEFAULT_CHAR_POS.y)
+    if inspectScoreFrame and InspectFrame then
+        inspectScoreFrame:ClearAllPoints()
+        inspectScoreFrame:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", DEFAULT_INSPECT_POS.x, DEFAULT_INSPECT_POS.y)
+    end
+    if GearScoreTBCClassicDB then
+        GearScoreTBCClassicDB.characterPos = nil
+        GearScoreTBCClassicDB.inspectPos = nil
+    end
+    print("|cFFFFFF00GearScore:|r Position reset to default.")
+end
+
+-- Slash commands
+SLASH_GEARSCORE1 = "/gs"
+SLASH_GEARSCORE2 = "/gearscore"
+SlashCmdList["GEARSCORE"] = function(msg)
+    msg = string.lower(strtrim(msg or ""))
+    if msg == "reset" then
+        ResetPositions()
+        if isUnlocked then
+            SetUnlocked(false)
+        end
+    elseif msg == "unlock" or msg == "move" then
+        SetUnlocked(true)
+        print("|cFFFFFF00GearScore:|r Unlocked. Drag to reposition, then type |cFF00FF00/gs lock|r to save.")
+    elseif msg == "lock" then
+        SetUnlocked(false)
+        print("|cFFFFFF00GearScore:|r Position locked.")
+    else
+        -- Toggle unlock/lock
+        if isUnlocked then
+            SetUnlocked(false)
+            print("|cFFFFFF00GearScore:|r Position locked.")
+        else
+            SetUnlocked(true)
+            print("|cFFFFFF00GearScore:|r Unlocked. Open character panel and drag to reposition. Type |cFF00FF00/gs|r to lock.")
+        end
+    end
+end
 
 
 -- GearScoreLite bracket-based color interpolation

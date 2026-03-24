@@ -1,0 +1,6 @@
+package-as: GearScoreTBCClassic
+manual-changelog: CHANGELOG.md
+license-output: LICENSE
+ignore:
+  - pictures
+  - README.md
