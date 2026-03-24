@@ -1,6 +1,10 @@
+# .pkgmeta
 package-as: GearScoreTBCClassic
 manual-changelog: CHANGELOG.md
 license-output: LICENSE
+move-folders:
+  GearScoreTBCClassic/GearScoreTBCClassic: GearScoreTBCClassic
 ignore:
   - pictures
   - README.md
+  - CHANGELOG.md
