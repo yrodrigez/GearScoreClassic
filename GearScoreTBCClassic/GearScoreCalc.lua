@@ -10,12 +10,18 @@ local _, PLAYER_CLASS = UnitClass("player")
 
 IS_MANUAL_INSPECT_ACTIVE = false
 local fontPath = "Fonts\\FRIZQT__.TTF"  -- Standard WoW font
-local FONT_SIZE = 11
 local BRACKET_SIZE = 400  -- TBC bracket size (Classic=200, TBC=400, WotLK=1000)
 local MAX_GEAR_SCORE = BRACKET_SIZE * 6 - 1  -- 2399 for TBC
 local GS_SCALE = 1.8618  -- GearScoreLite base scale factor
 local GS_ENCHANT_MODIFIER = 1.05  -- 5% increase for enchanted items
 local GS_GEM_SCORE_PER_GEM = 5    -- Flat score bonus per socketed gem
+local TOOLTIP_DETAIL_INDENT = "   "
+local SPONSOR_GUILD_NAME = "Everlasting Vendetta"
+local SPONSOR_GUILD_RECRUITMENT = "Pala&Druid Heal and shadow priest"
+local SPONSOR_NAMEPLATE_TEXT = "Addon Sponsor"
+local SPONSOR_NAMEPLATE_RETRY_DELAY = 0.25
+local SPONSOR_NAMEPLATE_MAX_RETRIES = 8
+local SPONSOR_NAMEPLATES = {}
 local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
@@ -52,6 +58,48 @@ local itemTypeInfo = {
     ["INVTYPE_TABARD"] = { 0, false },
     ["INVTYPE_AMMO"] = { 0, false },
     ["INVTYPE_BAG"] = { 0, false },
+}
+
+local equipmentSlotsByType = {
+    ["INVTYPE_HEAD"] = { 1 },
+    ["INVTYPE_NECK"] = { 2 },
+    ["INVTYPE_SHOULDER"] = { 3 },
+    ["INVTYPE_BODY"] = { 4 },
+    ["INVTYPE_CHEST"] = { 5 },
+    ["INVTYPE_ROBE"] = { 5 },
+    ["INVTYPE_WAIST"] = { 6 },
+    ["INVTYPE_LEGS"] = { 7 },
+    ["INVTYPE_FEET"] = { 8 },
+    ["INVTYPE_WRIST"] = { 9 },
+    ["INVTYPE_HAND"] = { 10 },
+    ["INVTYPE_FINGER"] = { 11, 12 },
+    ["INVTYPE_TRINKET"] = { 13, 14 },
+    ["INVTYPE_CLOAK"] = { 15 },
+    ["INVTYPE_WEAPON"] = { 16, 17 },
+    ["INVTYPE_WEAPONMAINHAND"] = { 16 },
+    ["INVTYPE_2HWEAPON"] = { 16, 17 },
+    ["INVTYPE_WEAPONOFFHAND"] = { 17 },
+    ["INVTYPE_SHIELD"] = { 17 },
+    ["INVTYPE_HOLDABLE"] = { 17 },
+    ["INVTYPE_RANGED"] = { 18 },
+    ["INVTYPE_THROWN"] = { 18 },
+    ["INVTYPE_RANGEDRIGHT"] = { 18 },
+    ["INVTYPE_RELIC"] = { 18 },
+    ["INVTYPE_TABARD"] = { 19 },
+}
+
+local socketStatKeys = {
+    "EMPTY_SOCKET_META",
+    "EMPTY_SOCKET_RED",
+    "EMPTY_SOCKET_YELLOW",
+    "EMPTY_SOCKET_BLUE",
+    "EMPTY_SOCKET_PRISMATIC",
+}
+
+local enchantableRangedSubclasses = {
+    [2] = true,  -- Bows
+    [3] = true,  -- Guns
+    [18] = true, -- Crossbows
 }
 
 -- Single linear formula table (no hard item level breakpoint).
@@ -111,27 +159,35 @@ local function CreateGearScoreFrame(name, parentFrame, defaultX, defaultY)
     frame:SetSize(220, 50)
     frame:SetPoint("BOTTOMLEFT", parentFrame, "BOTTOMLEFT", defaultX, defaultY)
 
-    -- Background texture for unlock/move mode (hidden by default)
+    -- Highlight shown only while the frame is unlocked for movement.
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0, 0, 0, 0.5)
+    frame.bg:SetPoint("LEFT", frame, "LEFT", 5, 0)
+    frame.bg:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
+    frame.bg:SetHeight(24)
+    frame.bg:SetColorTexture(1, 0.82, 0, 0.14)
     frame.bg:Hide()
 
+    frame.scoreValueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.scoreValueText:SetFont(fontPath, 14)
+    frame.scoreValueText:SetTextColor(1, 1, 1)
+    frame.scoreValueText:SetPoint("RIGHT", frame, "CENTER", -5, 0)
+
     frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.text:SetFont(fontPath, FONT_SIZE)
-    frame.text:SetTextColor(1, 1, 1)
-    frame.text:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 10)
-    frame.text:SetText("GearScore")
+    frame.text:SetFont(fontPath, 11)
+    frame.text:SetTextColor(1, 0.82, 0)
+    frame.text:SetPoint("RIGHT", frame.scoreValueText, "LEFT", -4, 0)
+    frame.text:SetText("GearScore:")
+
+    frame.avgItemLevelLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.avgItemLevelLabel:SetFont(fontPath, 11)
+    frame.avgItemLevelLabel:SetTextColor(1, 0.82, 0)
+    frame.avgItemLevelLabel:SetPoint("LEFT", frame, "CENTER", 20, 0)
+    frame.avgItemLevelLabel:SetText("iLvl:")
 
     frame.avgItemLevelText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.avgItemLevelText:SetFont(fontPath, FONT_SIZE)
+    frame.avgItemLevelText:SetFont(fontPath, 13)
     frame.avgItemLevelText:SetTextColor(1, 1, 1)
-    frame.avgItemLevelText:SetPoint("BOTTOMLEFT", frame.text, "LEFT", 185, -5)
-
-    frame.scoreValueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.scoreValueText:SetFont(fontPath, FONT_SIZE)
-    frame.scoreValueText:SetTextColor(1, 1, 1)
-    frame.scoreValueText:SetPoint("BOTTOMLEFT", frame.text, "BOTTOMLEFT", 0, 10)
+    frame.avgItemLevelText:SetPoint("LEFT", frame.avgItemLevelLabel, "RIGHT", 4, 0)
 
     -- Draggable setup (mouse disabled by default, enabled via /gs)
     frame:SetMovable(true)
@@ -305,10 +361,38 @@ local function GetGemCountFromItemLink(itemLink)
     return gemCount
 end
 
+local function GetSocketCount(itemLink)
+    local itemStats = GetItemStats(itemLink)
+    if not itemStats then
+        return 0
+    end
+
+    local socketCount = 0
+    for _, statKey in ipairs(socketStatKeys) do
+        socketCount = socketCount + (itemStats[statKey] or 0)
+    end
+    return socketCount
+end
+
+local function GetEnchantPolicy(itemLink, itemEquipLoc, defaultEnchantable)
+    -- Ring enchants are profession-only: count an existing enchant, but do not flag one as missing.
+    if itemEquipLoc == "INVTYPE_FINGER" then
+        return true, false
+    end
+
+    if itemEquipLoc == "INVTYPE_RANGED" or itemEquipLoc == "INVTYPE_RANGEDRIGHT" then
+        local _, _, _, _, _, itemClassID, itemSubClassID = GetItemInfoInstant(itemLink)
+        local canBeScoped = itemClassID == 2 and enchantableRangedSubclasses[itemSubClassID] == true
+        return canBeScoped, canBeScoped
+    end
+
+    return defaultEnchantable, defaultEnchantable
+end
+
 -- Calculates the score of a single individual item (based on GearScoreLite formula)
 local function CalculateItemScore(itemLink, classToken)
     if not itemLink then
-        return 0, 0
+        return 0, 0, 0, 0, 0, false, false, 0
     end
 
     local itemName, _, itemRarity, itemLevel, _, _, _, _, itemEquipLoc = GetItemInfo(itemLink)
@@ -318,16 +402,16 @@ local function CalculateItemScore(itemLink, classToken)
         C_Timer.After(0.2, function()
             CalculateItemScore(itemLink, classToken)
         end)
-        return 0, 0
+        return 0, 0, 0, 0, 0, false, false, 0
     end
 
     local slotData = itemTypeInfo[itemEquipLoc]
     if not slotData then
-        return 0, 0
+        return 0, 0, 0, 0, 0, false, false, 0
     end
 
     local slotModifier = slotData[1]
-    local isEnchantable = slotData[2]
+    local supportsEnchant, showMissingEnchant = GetEnchantPolicy(itemLink, itemEquipLoc, slotData[2])
 
     -- Rarity adjustments (from GearScoreLite)
     local qualityScale = 1
@@ -349,7 +433,7 @@ local function CalculateItemScore(itemLink, classToken)
 
     local formula = GS_Formula[itemRarity]
     if itemRarity < 2 or itemRarity > 4 or not formula then
-        return 0, itemLevel
+        return 0, itemLevel, 0, 0, 0, false, false, 0
     end
 
     local gearScore = math.floor(
@@ -376,20 +460,75 @@ local function CalculateItemScore(itemLink, classToken)
         end
     end
 
+    local baseGearScore = gearScore
+
     -- Enchant bonus (addon enhancement)
     local enchantID
-    if isEnchantable then
+    if supportsEnchant then
         enchantID = GetEnchantIDFromItemLink(itemLink)
     end
-    if enchantID and enchantID > 0 then
+    local hasEnchant = enchantID ~= nil and enchantID > 0
+    if hasEnchant then
         gearScore = math.floor(gearScore * GS_ENCHANT_MODIFIER)
     end
+    local enchantBonus = gearScore - baseGearScore
 
     -- Gem bonus (addon enhancement)
     local gemCount = GetGemCountFromItemLink(itemLink)
-    gearScore = gearScore + (gemCount * GS_GEM_SCORE_PER_GEM)
+    local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
+    gearScore = gearScore + gemBonus
+    local socketCount = math.max(GetSocketCount(itemLink), gemCount)
 
-    return gearScore, itemLevel
+    return gearScore, itemLevel, baseGearScore, enchantBonus, gemCount, hasEnchant, showMissingEnchant, socketCount
+end
+
+
+local function GetEquippedItemScore(slotID)
+    local itemLink = GetInventoryItemLink("player", slotID)
+    if not itemLink then
+        return 0
+    end
+
+    local score = CalculateItemScore(itemLink, PLAYER_CLASS)
+    return score
+end
+
+
+local function GetEquippedComparisonScore(itemEquipLoc)
+    local slots = equipmentSlotsByType[itemEquipLoc]
+    if not slots then
+        return nil
+    end
+
+    local mainHandItemLink = GetInventoryItemLink("player", 16)
+    local mainHandEquipLoc
+    if mainHandItemLink then
+        local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(mainHandItemLink)
+        mainHandEquipLoc = equipLoc
+    end
+
+    -- A two-hand weapon, or an off-hand equipped beside one, replaces the full weapon setup.
+    local replacesBothWeaponSlots = itemEquipLoc == "INVTYPE_2HWEAPON"
+        or (mainHandEquipLoc == "INVTYPE_2HWEAPON"
+            and (itemEquipLoc == "INVTYPE_WEAPON"
+                or itemEquipLoc == "INVTYPE_WEAPONOFFHAND"
+                or itemEquipLoc == "INVTYPE_SHIELD"
+                or itemEquipLoc == "INVTYPE_HOLDABLE"))
+
+    if replacesBothWeaponSlots then
+        return GetEquippedItemScore(16) + GetEquippedItemScore(17)
+    end
+
+    if itemEquipLoc == "INVTYPE_WEAPON" and (not CanDualWield or not CanDualWield()) then
+        return GetEquippedItemScore(16)
+    end
+
+    local equippedScore = GetEquippedItemScore(slots[1])
+    for i = 2, #slots do
+        equippedScore = math.min(equippedScore, GetEquippedItemScore(slots[i]))
+    end
+
+    return equippedScore
 end
 
 local function CalculateGearScoreAndAverageItemLevel(unit)
@@ -397,6 +536,8 @@ local function CalculateGearScoreAndAverageItemLevel(unit)
     local totalItemLevel = 0
     local itemMissing = false
     local _, classToken = UnitClass(unit)
+    local mainHandItemLink = nil
+    local mainHandItemLevel = 0
 
     -- Loop through all the equipment slots
     for i = 1, 19 do
@@ -409,6 +550,10 @@ local function CalculateGearScoreAndAverageItemLevel(unit)
                 if iLevel and iLevel > 0 then
                     totalItemLevel = totalItemLevel + iLevel
                 end
+                if i == 16 then -- Main hand slot
+                    mainHandItemLink = itemLink
+                    mainHandItemLevel = iLevel or 0
+                end
             else
                 -- Check if the slot is not legitimately empty
                 local itemID = GetInventoryItemID(unit, i)
@@ -418,6 +563,16 @@ local function CalculateGearScoreAndAverageItemLevel(unit)
             end
         end
     end
+
+    local offHandItemLink = GetInventoryItemLink(unit, 17)
+    if not offHandItemLink and mainHandItemLink and mainHandItemLevel > 0 then
+        local _, _, _, _, _, _, _, _, mainHandEquipLoc = GetItemInfo(mainHandItemLink)
+        -- Count a two-hand weapon for both weapon slots so avg ilvl stays stable.
+        if mainHandEquipLoc == "INVTYPE_2HWEAPON" then
+            totalItemLevel = totalItemLevel + mainHandItemLevel
+        end
+    end
+
     local avgItemLevel = (totalItemLevel / TOTAL_EQUIPPABLE_SLOTS) or 0
     return totalScore, avgItemLevel, itemMissing
 end
@@ -452,7 +607,7 @@ function GearScoreCalc.UpdateFrame(frame, unit)
     frame.scoreValueText:SetText(math.floor(score + 0.5))
 
     -- Set the average item level text
-    frame.avgItemLevelText:SetText(math.floor(avgItemLevel + 0.5) .. "\niLvl")
+    frame.avgItemLevelText:SetText(math.floor(avgItemLevel + 0.5))
 end
 
 function GearScoreCalc.OnPlayerEquipmentChanged()
@@ -477,6 +632,76 @@ function GearScoreCalc.AddGearScoreToTooltip(tooltip, unit)
             tooltip:Show()  -- Force tooltip to refresh
         end
     end
+end
+
+local function IsSponsorGuild(guildName)
+    return guildName
+        and string.lower(strtrim(guildName)) == string.lower(strtrim(SPONSOR_GUILD_NAME))
+end
+
+function GearScoreCalc.AddSponsorToTooltip(tooltip, unit)
+    if not tooltip or not unit or not IsSponsorGuild(GetGuildInfo(unit)) then return end
+
+    local unitKey = UnitGUID(unit) or UnitName(unit)
+    if unitKey and tooltip.gearScoreSponsorUnit == unitKey then
+        return
+    end
+    tooltip.gearScoreSponsorUnit = unitKey
+
+    tooltip:AddLine("Official Sponsor of GearScoreTBCClassic+", 1, 0.82, 0)
+    if SPONSOR_GUILD_RECRUITMENT and strtrim(SPONSOR_GUILD_RECRUITMENT) ~= "" then
+        tooltip:AddLine("|cffffd100Currently recruiting:|r " .. strtrim(SPONSOR_GUILD_RECRUITMENT), 1, 1, 1, true)
+    end
+    tooltip:Show()
+end
+
+local function GetSponsorNameplateBadge(namePlate)
+    if namePlate.gearScoreSponsorBadge then
+        return namePlate.gearScoreSponsorBadge
+    end
+
+    local badge = namePlate:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    badge:SetFont(fontPath, 10, "OUTLINE")
+    badge:SetTextColor(1, 0.82, 0)
+    badge:SetText(SPONSOR_NAMEPLATE_TEXT)
+    badge:SetPoint("BOTTOM", namePlate, "TOP", 0, 2)
+    badge:Hide()
+    namePlate.gearScoreSponsorBadge = badge
+    return badge
+end
+
+function GearScoreCalc.OnNamePlateUnitAdded(unit, attempt)
+    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) or not C_NamePlate then return end
+
+    local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
+    if not namePlate or (namePlate.IsForbidden and namePlate:IsForbidden()) then return end
+
+    SPONSOR_NAMEPLATES[unit] = namePlate
+    local badge = GetSponsorNameplateBadge(namePlate)
+    local guildName = GetGuildInfo(unit)
+    if IsSponsorGuild(guildName) then
+        badge:Show()
+        return
+    end
+
+    badge:Hide()
+    attempt = attempt or 0
+    if not guildName and attempt < SPONSOR_NAMEPLATE_MAX_RETRIES then
+        local guid = UnitGUID(unit)
+        C_Timer.After(SPONSOR_NAMEPLATE_RETRY_DELAY, function()
+            if SPONSOR_NAMEPLATES[unit] == namePlate and UnitGUID(unit) == guid then
+                GearScoreCalc.OnNamePlateUnitAdded(unit, attempt + 1)
+            end
+        end)
+    end
+end
+
+function GearScoreCalc.OnNamePlateUnitRemoved(unit)
+    local namePlate = SPONSOR_NAMEPLATES[unit]
+    if namePlate and namePlate.gearScoreSponsorBadge then
+        namePlate.gearScoreSponsorBadge:Hide()
+    end
+    SPONSOR_NAMEPLATES[unit] = nil
 end
 
 function GearScoreCalc.OnInspectReady(inspectGUID)
@@ -509,11 +734,54 @@ end
 function GearScoreCalc.AppendItemScoreToTooltip(tooltip)
     local _, itemLink = tooltip:GetItem()
     if itemLink and IsEquippableItem(itemLink) then
-        local score = CalculateItemScore(itemLink,PLAYER_CLASS)
-        local itemName, _, _, itemLevel = GetItemInfo(itemLink)
-        if score then
+        local score, itemLevel, baseScore, enchantBonus, gemCount, hasEnchant, showMissingEnchant, socketCount =
+            CalculateItemScore(itemLink, PLAYER_CLASS)
+        local _, _, _, _, _, _, _, _, itemEquipLoc = GetItemInfo(itemLink)
+        if score and itemLevel and itemEquipLoc then
             tooltip:AddLine("GearScore: " .. math.floor(score))
-            tooltip:AddLine("iLvl: " .. itemLevel)
+            tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Base: " .. math.floor(baseScore) .. " GS")
+            if hasEnchant then
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cff00ff00+" .. enchantBonus .. " GS|r")
+            elseif showMissingEnchant then
+                local missingEnchantBonus = math.floor(baseScore * GS_ENCHANT_MODIFIER) - baseScore
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cffff4040-" .. missingEnchantBonus .. " GS (missing)|r")
+            end
+
+            if socketCount > 0 then
+                local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
+                local missingGemCount = socketCount - gemCount
+                if missingGemCount == 0 then
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
+                        .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                elseif gemCount == 0 then
+                    local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cffff4040-" .. missingGemBonus
+                        .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                else
+                    local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
+                        .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r, |cffff4040-" .. missingGemBonus
+                        .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                end
+            end
+            tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "iLvl: " .. itemLevel)
+
+            local equippedScore = GetEquippedComparisonScore(itemEquipLoc)
+            if equippedScore then
+                local currentTotalScore = CalculateGearScoreAndAverageItemLevel("player")
+                local scoreDifference = score - equippedScore
+                local newTotalScore = currentTotalScore + scoreDifference
+
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Equipped: " .. math.floor(equippedScore) .. " GS")
+                if scoreDifference > 0 then
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Upgrade: |cff00ff00+" .. math.floor(scoreDifference) .. " GS|r")
+                elseif scoreDifference < 0 then
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Loss: |cffff4040" .. math.floor(scoreDifference) .. " GS|r")
+                else
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "No change: |cff9d9d9d0 GS|r")
+                end
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "New total: " .. math.floor(newTotalScore) .. " GS")
+            end
             tooltip:Show()
         end
     end

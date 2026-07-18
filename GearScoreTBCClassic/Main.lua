@@ -3,6 +3,8 @@ local gearScoreFrame = CreateFrame("Frame")
 gearScoreFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 gearScoreFrame:RegisterEvent("INSPECT_READY")
 gearScoreFrame:RegisterEvent("PLAYER_LOGIN")
+gearScoreFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+gearScoreFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 
 local inspectUILoaded = false
 
@@ -36,6 +38,12 @@ gearScoreFrame:SetScript("OnEvent", function(self, event, arg1)
         
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         GearScoreCalc.OnPlayerEquipmentChanged()
+
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        GearScoreCalc.OnNamePlateUnitAdded(arg1)
+
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+        GearScoreCalc.OnNamePlateUnitRemoved(arg1)
         
     elseif event == "INSPECT_READY" then
         -- Setup inspect hooks if not done yet (InspectFrame loads on first inspect)
@@ -51,7 +59,13 @@ end)
 
 GameTooltip:HookScript("OnTooltipSetUnit", function(self)
     local _, initialUnit = self:GetUnit()
-    if initialUnit and UnitIsPlayer(initialUnit) and not InCombatLockdown() then
+    if initialUnit and UnitIsPlayer(initialUnit) then
+        GearScoreCalc.AddSponsorToTooltip(self, initialUnit)
+
+        if InCombatLockdown() then
+            return
+        end
+
         local guid = UnitGUID(initialUnit)
         local cachedData = GEAR_SCORE_CACHE[guid]
 
@@ -69,6 +83,10 @@ GameTooltip:HookScript("OnTooltipSetUnit", function(self)
             end
         end
     end
+end)
+
+GameTooltip:HookScript("OnTooltipCleared", function(self)
+    self.gearScoreSponsorUnit = nil
 end)
 
 -- Hook into item tooltips

@@ -1,9 +1,9 @@
-## Interface: 20505
+## Interface: 20506
 ## Interface-Classic: 11508
-## Interface-BCC: 20505
+## Interface-BCC: 20506
 ## Title: GearScoreTBCClassic
 ## Notes: Calculates gearscore, a general metric for itemization strength
-## Version: 1.1.0
+## Version: 1.1.1
 ## Author: Yago (original by gk646)
 ## OptionalDeps: Blizzard_InspectUI
 ## LoadOnDemand: 0
