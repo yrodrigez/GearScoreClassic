@@ -27,6 +27,7 @@ gearScoreFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
         -- Initialize saved variables and restore positions
         GearScoreCalc.InitSavedVars()
+        GearScoreCalc.CreateOptionsPanel()
 
         -- Character frame hook
         CharacterFrame:HookScript("OnShow", function()

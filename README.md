@@ -55,7 +55,8 @@ The Gear Score is calculated using the following methodology:
 - **Average Item Level (iLvl)** calculation and display
 - **Character Frame & Inspect Frame integration**
 - **Colored Gear Score**, based on percentile relative to the current phase (similar to Warcraft Logs)
-- Lightweight and automatic — no configuration required
+- Optional detailed item tooltip breakdown, disabled by default
+- Account-wide settings in the WoW Options menu
 
 ---
 
@@ -68,7 +69,10 @@ Gear Score and average item level will automatically appear in:
 - The inspect frame
 - Tooltip hover information (where applicable)
 
-There are currently no slash commands or configuration options.
+Open the WoW Options menu and select **GearScoreTBCClassic** to enable the detailed item tooltip breakdown.
+When disabled, item tooltips display only the total GearScore.
+
+Use `/gs` to unlock and move the GearScore displays. Use `/gs lock` to save their positions or `/gs reset` to restore the defaults.
 
 ---
 

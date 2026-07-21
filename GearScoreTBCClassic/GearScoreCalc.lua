@@ -26,7 +26,7 @@ local MAX_RETRIES = 3
 local INSPECT_RETRY_DELAY = 0.2
 local INSPECT_RETRIES = {}
 local TOTAL_EQUIPPABLE_SLOTS = 17
-local ADDON_VERSION = "1.1.0"
+local ADDON_VERSION = "1.2.0"
 
 print("|cFFFFFF00" .. "GearScoreTBCClassic+ " .. "|r" .. "|cFF00FF00" .. ADDON_VERSION .. "|r" .. "|cFFFFFF00" .. " by " .. "|r" .. "|cFFFFA500" .. "gk646" .. "|r")
 
@@ -238,9 +238,48 @@ function GearScoreCalc.InitSavedVars()
     if not GearScoreTBCClassicDB then
         GearScoreTBCClassicDB = {}
     end
+    if GearScoreTBCClassicDB.showTooltipDetails == nil then
+        GearScoreTBCClassicDB.showTooltipDetails = false
+    end
     RestoreFramePosition(scoreFrame, "characterPos")
     if inspectScoreFrame and InspectFrame then
         RestoreFramePosition(inspectScoreFrame, "inspectPos")
+    end
+end
+
+function GearScoreCalc.CreateOptionsPanel()
+    if GearScoreTBCClassicOptionsPanel then return end
+
+    local panel = CreateFrame("Frame", "GearScoreTBCClassicOptionsPanel")
+    panel.name = "GearScoreTBCClassic"
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("GearScoreTBCClassic")
+
+    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    description:SetWidth(600)
+    description:SetJustifyH("LEFT")
+    description:SetText("Choose how much GearScore information is shown in item tooltips.")
+
+    local checkbox = CreateFrame("CheckButton", "GearScoreTBCClassicShowTooltipDetailsCheckButton", panel,
+        "InterfaceOptionsCheckButtonTemplate")
+    checkbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", -2, -16)
+    _G[checkbox:GetName() .. "Text"]:SetText("Show detailed item GearScore tooltip")
+    checkbox:SetScript("OnClick", function(self)
+        GearScoreTBCClassicDB.showTooltipDetails = self:GetChecked() and true or false
+    end)
+
+    panel:SetScript("OnShow", function()
+        checkbox:SetChecked(GearScoreTBCClassicDB and GearScoreTBCClassicDB.showTooltipDetails)
+    end)
+
+    if Settings and Settings.RegisterCanvasLayoutCategory then
+        local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(category)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
     end
 end
 
@@ -739,48 +778,50 @@ function GearScoreCalc.AppendItemScoreToTooltip(tooltip)
         local _, _, _, _, _, _, _, _, itemEquipLoc = GetItemInfo(itemLink)
         if score and itemLevel and itemEquipLoc then
             tooltip:AddLine("GearScore: " .. math.floor(score))
-            tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Base: " .. math.floor(baseScore) .. " GS")
-            if hasEnchant then
-                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cff00ff00+" .. enchantBonus .. " GS|r")
-            elseif showMissingEnchant then
-                local missingEnchantBonus = math.floor(baseScore * GS_ENCHANT_MODIFIER) - baseScore
-                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cffff4040-" .. missingEnchantBonus .. " GS (missing)|r")
-            end
-
-            if socketCount > 0 then
-                local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
-                local missingGemCount = socketCount - gemCount
-                if missingGemCount == 0 then
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
-                        .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
-                elseif gemCount == 0 then
-                    local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cffff4040-" .. missingGemBonus
-                        .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
-                else
-                    local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
-                        .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r, |cffff4040-" .. missingGemBonus
-                        .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+            if GearScoreTBCClassicDB and GearScoreTBCClassicDB.showTooltipDetails then
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Base: " .. math.floor(baseScore) .. " GS")
+                if hasEnchant then
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cff00ff00+" .. enchantBonus .. " GS|r")
+                elseif showMissingEnchant then
+                    local missingEnchantBonus = math.floor(baseScore * GS_ENCHANT_MODIFIER) - baseScore
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Enchant: |cffff4040-" .. missingEnchantBonus .. " GS (missing)|r")
                 end
-            end
-            tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "iLvl: " .. itemLevel)
 
-            local equippedScore = GetEquippedComparisonScore(itemEquipLoc)
-            if equippedScore then
-                local currentTotalScore = CalculateGearScoreAndAverageItemLevel("player")
-                local scoreDifference = score - equippedScore
-                local newTotalScore = currentTotalScore + scoreDifference
-
-                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Equipped: " .. math.floor(equippedScore) .. " GS")
-                if scoreDifference > 0 then
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Upgrade: |cff00ff00+" .. math.floor(scoreDifference) .. " GS|r")
-                elseif scoreDifference < 0 then
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Loss: |cffff4040" .. math.floor(scoreDifference) .. " GS|r")
-                else
-                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "No change: |cff9d9d9d0 GS|r")
+                if socketCount > 0 then
+                    local gemBonus = gemCount * GS_GEM_SCORE_PER_GEM
+                    local missingGemCount = socketCount - gemCount
+                    if missingGemCount == 0 then
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
+                            .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                    elseif gemCount == 0 then
+                        local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cffff4040-" .. missingGemBonus
+                            .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                    else
+                        local missingGemBonus = missingGemCount * GS_GEM_SCORE_PER_GEM
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Gems: |cff00ff00+" .. gemBonus .. " GS ("
+                            .. gemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r, |cffff4040-" .. missingGemBonus
+                            .. " GS missing (" .. missingGemCount .. " x " .. GS_GEM_SCORE_PER_GEM .. ")|r")
+                    end
                 end
-                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "New total: " .. math.floor(newTotalScore) .. " GS")
+                tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "iLvl: " .. itemLevel)
+
+                local equippedScore = GetEquippedComparisonScore(itemEquipLoc)
+                if equippedScore then
+                    local currentTotalScore = CalculateGearScoreAndAverageItemLevel("player")
+                    local scoreDifference = score - equippedScore
+                    local newTotalScore = currentTotalScore + scoreDifference
+
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Equipped: " .. math.floor(equippedScore) .. " GS")
+                    if scoreDifference > 0 then
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Upgrade: |cff00ff00+" .. math.floor(scoreDifference) .. " GS|r")
+                    elseif scoreDifference < 0 then
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "Loss: |cffff4040" .. math.floor(scoreDifference) .. " GS|r")
+                    else
+                        tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "No change: |cff9d9d9d0 GS|r")
+                    end
+                    tooltip:AddLine(TOOLTIP_DETAIL_INDENT .. "New total: " .. math.floor(newTotalScore) .. " GS")
+                end
             end
             tooltip:Show()
         end
